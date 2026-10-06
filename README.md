@@ -677,7 +677,7 @@ Finally, we reinforced creating all the children before waiting, so a slow file 
 2. zyBooks CS 149 C programming exercises and zyLabs.
 3. Linux manual pages: [pipe(2)](https://man7.org/linux/man-pages/man2/pipe.2.html), [read(2)](https://man7.org/linux/man-pages/man2/read.2.html), [write(2)](https://man7.org/linux/man-pages/man2/write.2.html), [fork(2)](https://man7.org/linux/man-pages/man2/fork.2.html), [wait(2)](https://man7.org/linux/man-pages/man2/wait.2.html).
 4. TutorialsPoint, [perror](https://www.tutorialspoint.com/c_standard_library/c_function_perror.htm).
-5. Anthropic Claude, used for debugging, code review, testing guidance, and README preparation. Public chat link: **[ADD PUBLIC CHAT LINK HERE, or delete this line]**
+5. Anthropic Claude, used for debugging, code review, testing guidance, and README preparation.
 
 ---
 
