@@ -2,7 +2,7 @@
  * Description: This program counts how many times each individual name appears across one or more files.
  * Author names: Ebsan Iqbal, Raymond Okolo
  * Author emails: ebsan.iqbal@sjsu.edu, raymond.okolo@sjsu.edu
- * Last modified date: 9/23/2026
+ * Last modified date: 10/5/2026
  * Creation date: 9/2/2026
  **/
 
@@ -11,112 +11,47 @@
 #include <string.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include "hashtable.h"
 
-#define HASHSIZE 101
+#define NAME_LEN 32
+
+typedef struct {
+    char name[NAME_LEN];
+    int count;
+} NameCountData;
+
+typedef enum {
+    TYPE_NAMECOUNT,
+    TYPE_OTHERTYPE // there is a possibility to extend with more types in the future
+} MessageType;
+
+typedef struct {
+    MessageType type;
+    size_t size; // Size of the following payload
+} MessageHeader;
+
 
 /**
- * Table entry:
- * Each struct has a table of names if same hash value is used.
- **/
-struct nlist{
-    int nCount;     // number of names in struct.
-    int nCapacity;  // used for when to increase allocated memory.
-    int* counts;    // array of counts for each name in array of names.
-    char** names;   // array of names.
-
-};
-
-static struct nlist *hashtab[HASHSIZE];     // pointer table
-char* nameList[101];                        // list of unique names.
-int nameCount = 0;                          // number of unique names.
-
-/**
- * This is the hash functionL form hash value for string temp
- * Assumption: temp is a char*
- * Input parameters: temp
- * Returns: a hash value
+  * This function creates a message and header struct and writes both to parent process
+  * Returns: nothing
 **/
-unsigned hash(char *temp) {
-    unsigned hashval;
-    for (hashval = 0; *temp != '\0'; temp++) {
-        hashval = *temp + 31 * hashval;
-    }
-    return hashval % HASHSIZE;
+void write_struct_namecount(int fd, NameCountData *data) {
+    MessageHeader header;
+    header.type = TYPE_NAMECOUNT;
+    header.size = sizeof(NameCountData);
+
+    //combine header_payload
+    char payload[sizeof(header) + sizeof(NameCountData)];
+    memcpy(payload, &header, sizeof(header));
+    memcpy(payload + sizeof(header), data, sizeof(NameCountData));
+
+    write(fd, payload, sizeof(payload)); // Write the header+payload
 }
 
 /**
- * This function performs a lookup of a name in hashtab
- * Assumption: s is a char*
- * Input parameters: s
- * Returns: a pointer to a struct or NULL if no struct exists.
+  * This function prints the names and number of occurrences in a readable format.
+  * Returns: nothing
 **/
-struct nlist *lookup(char *s) {
-    struct nlist *np = hashtab[hash(s)];
-    if (np != NULL) {
-        return np;
-    }
-    return NULL; /* not found */
-}
-
-/**
- * This function creates and inserts a struct in hashtab or updates an existing struct.
- * Assumption: name is a char*
- * Input parameters: name
- * Returns: nothing
-**/
-void insert(char *name) {
-    char* temp = name; // so name remains unaltered for hash()
-    struct nlist *np = lookup(temp);
-    const int hVal = hash(name);
-
-    if (np == NULL) { //name is not in a struct yet.
-        np = malloc(sizeof(*np));
-        if (np == NULL) {
-            fprintf(stderr, "Allocation failed\n");
-            exit(1);
-        }
-        //initializing variables and allocating memory.
-        np->nCount = 1;
-        np->nCapacity = 4;
-        np->names = malloc(np->nCapacity * sizeof(char*));
-        np->names[0] = strdup(name);
-        np->counts = malloc(np->nCapacity * sizeof(int));
-        np->counts[0] = 1;
-        hashtab[hVal] = np;
-
-        nameList[nameCount++] = strdup(name); //insert struct in table.
-    } else {
-        int found = 0;
-        //this loop iterates through a struct's names array
-        for(int i = 0; i < np->nCount; i++){
-            if(strcmp(np->names[i], name) == 0) { // name is found in struct name array
-                found = 1;
-                hashtab[hVal]->counts[i]++;     //increment count
-                break;
-            }
-        }
-        //name is not found but uses same has value,
-        //so insert name in existing struct names array.
-        //also allocate more memory if needed and increment nCounts
-        if(found == 0) {
-            if(hashtab[hVal]->nCount == hashtab[hVal]->nCapacity) {
-                hashtab[hVal]->nCapacity *=2;
-                hashtab[hVal]->names = realloc(hashtab[hVal]->names, hashtab[hVal]->nCapacity * sizeof(char*));
-                hashtab[hVal]->counts = realloc(hashtab[hVal]->counts, hashtab[hVal]->nCapacity * sizeof(int));
-            }
-            hashtab[hVal]->names[hashtab[hVal]->nCount] = strdup(name);
-            hashtab[hVal]->counts[hashtab[hVal]->nCount] = 1;
-            hashtab[hVal]->nCount++;
-
-            nameList[nameCount++] = strdup(name);
-        }
-    }
-}
-
-
- //This is function prints the names and number of occurrences in a readable format.
- //Returns: nothing
-
 void printNames(){
     for(int i = 0; i < nameCount; i++) {
         struct nlist *np = lookup(nameList[i]);
@@ -129,9 +64,12 @@ void printNames(){
     }
 }
 
- //This is function outputs the names and number of occurrences in a readable format to a PID.out file.
- //Returns: nothing
-void outputPIDs(char * pid) {
+/**
+ * This function outputs the names and number of occurrences in a readable format to a PID.out file.
+ * It also creates a NameCountData struct and calls write_struct_namecount
+ * Returns: nothing
+**/
+void outputPIDs(int fd, char * pid) {
     char filename[32];
     snprintf(filename, sizeof(filename), "%s.out", pid);
 
@@ -144,12 +82,20 @@ void outputPIDs(char * pid) {
     for(int i = 0; i < nameCount; i++) {
         struct nlist *np = lookup(nameList[i]);
         for(int j = 0; j < np->nCount; j++) {
-            if(strcmp(np->names[j], nameList[i]) == 0) {
+            if(strcmp(np->names[j], nameList[i]) == 0)
+            {
+                NameCountData d = {0};
+                strncpy(d.name, nameList[i], sizeof(d.name) - 1);
+                d.count = np->counts[j];
+                if (fd >= 0) {
+                    write_struct_namecount(fd, &d);
+                }
                 fprintf(fp,"%s: %d\n", nameList[i], np->counts[j]);
                 break;
             }
         }
     }
+
     fclose(fp);
 }
 
@@ -171,9 +117,10 @@ int main(int argc, char *argv[]) {
         fp = stdin;
     }
 
-
-    //Optional direct-file mode:
-    //./countnames names.txt
+    /*
+     * Optional direct-file mode:
+     * ./countnames names.txt
+     */
     else if (argc == 2) {
         snprintf(pidStr, sizeof(pidStr), "%d", getpid());
         pid = pidStr;
@@ -186,13 +133,13 @@ int main(int argc, char *argv[]) {
         }
     }
 
-
-     //Normal Assignment 2 mode:
-     //shell calls:
-     //./countnames PID filename
-     //"1" is used by shell.c to indicate stdin.
-
-    else if (argc == 3) {
+    /*
+     * Normal Assignment 2 mode:
+     * shell calls:
+     *./countnames PID filename
+     * "1" is used by shell.c to indicate stdin.
+     */
+    else if (argc == 4) {
         pid = argv[1];
 
         if (strcmp(argv[2], "1") == 0) {
@@ -201,7 +148,6 @@ int main(int argc, char *argv[]) {
         }
         else {
             inputName = argv[2];
-
             fp = fopen(argv[2], "r");
             if (fp == NULL) {
                 fprintf(stderr, "error: cannot open file %s\n", argv[2]);
@@ -219,7 +165,6 @@ int main(int argc, char *argv[]) {
 
     char errFile[32];
     snprintf(errFile, sizeof(errFile), "%s.err", pid);
-
     FILE *ep = fopen(errFile, "w");
     if (ep == NULL) {
         fprintf(stderr, "error: cannot open created error file.\n");
@@ -227,7 +172,6 @@ int main(int argc, char *argv[]) {
         if (fp != stdin) {
             fclose(fp);
         }
-
         exit(1);
     }
 
@@ -250,12 +194,15 @@ int main(int argc, char *argv[]) {
         lineNum++;
     }
 
-    outputPIDs(pid);
+    int sfd = (argc == 4) ? atoi(argv[3]) : -1;
+    outputPIDs(sfd, pid);     //argv[3] has the file discriptors
+    if(sfd >= 0) {
+        close(sfd);
+    }
 
     if (fp != stdin) {
         fclose(fp);
     }
-
     fclose(ep);
 
     return 0;

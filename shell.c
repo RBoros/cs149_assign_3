@@ -1,77 +1,155 @@
 /**
- * Description: This program creates multiple simultaneous processes for countnames.c
+ * Description: This program creates multiple simultaneous processes for countnames.c and sums the total
  * Author names: Ebsan Iqbal, Raymond Okolo
  * Author emails: ebsan.iqbal@sjsu.edu, raymond.okolo@sjsu.edu
- * Last modified date: 9/23/2026
+ * Last modified date: 10/5/2026
  * Creation date: 9/20/2026
  **/
-
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
 #include <sys/wait.h>
+#include "hashtable.h"
+
 #define MAX_LINE 1024   // max characters read per prompt line
 #define MAX_TOKENS 64   // max tokens (command + filenames) per line
+#define NAME_LEN 32
 
-void makeChildren(char *cmd, char *filename){
+typedef struct {
+    char name[NAME_LEN];
+    int count;
+} NameCountData;
+
+typedef enum {
+    TYPE_NAMECOUNT,
+    TYPE_OTHERTYPE // there is a possibility to extend with more types in the future
+} MessageType;
+
+typedef struct {
+    MessageType type;
+    size_t size; // Size of the following payload
+} MessageHeader;
+
+/**
+  * This function reads and processes data from a returned message header and payload
+  * Returns: nothing
+**/
+void read_from_pipe(int fd) {
+    MessageHeader header;
+
+    while(1){
+        char *p = (char *)&header;
+        size_t g = 0;
+
+        //looping to get all bytes from the header
+        while(g < sizeof(header)){
+            ssize_t n = read(fd, p + g, sizeof(header) - g);
+
+            if (n < 0){
+                fprintf(stderr, "error: bad message header\n");
+                return;
+            }
+            if (n == 0) {
+                if (g != 0) {
+                    fprintf(stderr, "error: bad message header\n");
+                }
+                return;
+            }
+            g += n;
+        }
+
+        switch (header.type) {
+        case TYPE_NAMECOUNT: {
+                NameCountData d;
+                char *q = (char *)&d;
+                g = 0;
+                while(g < sizeof(d)){
+                    ssize_t n = read(fd, q + g, sizeof(d) - g);
+
+                    if (n <= 0){
+                        fprintf(stderr, "error: bad namecount\n");
+                        return;
+                    }
+                    g += n;
+                }
+
+                // Process NameCountData data
+                insertCount(d.name, d.count);
+                break;
+        }
+        case TYPE_OTHERTYPE: {
+                break;
+        }
+        default:
+            // Handle unknown type error
+            fprintf(stderr, "Unknown message type received: %d\n", header.type);
+            return;
+        }
+    }
+}
+
+/**
+  * This function creates child processes, each with its own pipe
+  * each process executes the countnames program
+  * Returns: -1 if pipe fails or data from the reading end of a pipe
+**/
+int makeChildren(char* cmd, char* filename){
+    int fd[2];                       // fd[0] = reading end, fd[1] = writing end
+    if (pipe(fd) == -1) {
+        perror("pipe error");
+        exit(1);
+    }
+
     pid_t pid = fork();
 
     if(pid < 0){
-        printf("Fork failed");
+        fprintf(stderr,"Fork failed\n");
+        close(fd[0]);
+        close(fd[1]);
+        return -1;
     }
-    else if(pid == 0){
+    if(pid == 0){
+        close(fd[0]);                              // child only writes
         char childPidStr[16];
+        char sfd[16];                              //string file descriptor
         snprintf(childPidStr, sizeof(childPidStr), "%d", getpid());
+        snprintf(sfd, sizeof(sfd), "%d", fd[1]);
 
-        execl(cmd, cmd, childPidStr, filename, NULL);
+        execl(cmd, cmd, childPidStr, filename, sfd, NULL);
 
         // execl only returns if it failed
         fprintf(stderr,"error: cannot exec %s\n", cmd);
         exit(1);
     }
-
+    // parent
+    close(fd[1]);                              // parent only reads
+    return fd[0];
 }
-int main(int argc, char *argv[]) {
-    /*
-    if(argc > 1) {
-        for(int i = 1; i < argc; i++){
-            pid_t pid = fork();
-            if(pid < 0){
-                printf("Fork failed");
-            }
-            else if(pid == 0){
-                pid_t childPid = getpid();
-                char childPidStr[16];
-                snprintf(childPidStr, sizeof(childPidStr), "%d", childPid);
 
-                execl("./countnames", "countnames", childPidStr, argv[i], NULL);
-                fprintf(stderr,"error: cannot open file\n");
-                exit(1);
+/**
+  * This function prints the names and number of occurrences in a readable format.
+  * Returns: nothing
+**/
+void printNames(){
+    for(int i = 0; i < nameCount; i++) {
+        struct nlist *np = lookup(nameList[i]);
+        for(int j = 0; j < np->nCount; j++) {
+            if(strcmp(np->names[j], nameList[i]) == 0) {
+                printf("%s: %d\n", nameList[i], np->counts[j]);
+                break;
             }
-        }
-    }else if (argc == 1){
-        pid_t pid = fork();
-        if(pid < 0){
-            printf("Fork failed");
-        }
-        if(pid == 0) {
-            pid_t childPid = getpid();
-            char childPidStr[16];
-            snprintf(childPidStr, sizeof(childPidStr), "%d", childPid);
-
-            execlp("./countnames", "countnames", childPidStr, "1", NULL);
-            fprintf(stderr,"error: cannot open file\n");
-            exit(1);
         }
     }
-    */
+}
 
-
+int main() {
+    int rEnd[MAX_TOKENS];
     char line[MAX_LINE];
 
     while (1){
+        int children = 0;
         printf("%% ");
         fflush(stdout);
 
@@ -99,15 +177,28 @@ int main(int argc, char *argv[]) {
 
         if (count == 1) {
             // no files given: one child reads stdin ("1" tells countnames so)
-            makeChildren(tokens[0], "1");
-        }
-        else {
+            int r = makeChildren(tokens[0], "1");
+            if (r >= 0) {
+                rEnd[children++] = r;
+            }
+        }else {
             // one child per input file, all running in parallel
             for (int i = 1; i < count; i++) {
-                makeChildren(tokens[0], tokens[i]);
+                int r = makeChildren(tokens[0], tokens[i]);
+                if (r >= 0) {
+                    rEnd[children++] = r;
+                }
             }
         }
+        // after all children are forked: read each pipe until EOF, then close it
+        for (int i = 0; i < children; i++) {
+            read_from_pipe(rEnd[i]);
+            close(rEnd[i]);
+        }
 
+
+        printNames();
+        clearTable();
 
         // Parent: reap every child so none are left as zombies, and report
         // whether each exited normally or was killed by a signal.
