@@ -52,7 +52,7 @@ void write_struct_namecount(int fd, NameCountData *data) {
   * This function prints the names and number of occurrences in a readable format.
   * Returns: nothing
 **/
-void printNames(){
+/*void printNames(){
     for(int i = 0; i < nameCount; i++) {
         struct nlist *np = lookup(nameList[i]);
         for(int j = 0; j < np->nCount; j++) {
@@ -62,7 +62,7 @@ void printNames(){
             }
         }
     }
-}
+}*/
 
 /**
  * This function outputs the names and number of occurrences in a readable format to a PID.out file.

@@ -3,5 +3,5 @@ project(cs149_assign_3 C)
 
 set(CMAKE_C_STANDARD 11)
 
-add_executable(shell shell.c hashtable.c)
-add_executable(countnames countnames.c hashtable.c)
+add_executable(shell shell.c)
+add_executable(countnames countnames.c)
