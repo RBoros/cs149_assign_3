@@ -2,8 +2,8 @@
  * Description: This program counts how many times each individual name appears across one or more files.
  * Author names: Ebsan Iqbal, Raymond Okolo
  * Author emails: ebsan.iqbal@sjsu.edu, raymond.okolo@sjsu.edu
- * Last modified date: 10/5/2026
- * Creation date: 9/2/2026
+ * Last modified date: 10/10/2026
+ * Creation date: 10/5/2026
  **/
 
 #include <stdio.h>
@@ -13,8 +13,9 @@
 #include <unistd.h>
 #include "hashtable.h"
 
-#define NAME_LEN 32
+#define NAME_LEN 32         // max length of name
 
+//Message payload
 typedef struct {
     char name[NAME_LEN];
     int count;
@@ -25,6 +26,7 @@ typedef enum {
     TYPE_OTHERTYPE // there is a possibility to extend with more types in the future
 } MessageType;
 
+//message header
 typedef struct {
     MessageType type;
     size_t size; // Size of the following payload
@@ -33,6 +35,8 @@ typedef struct {
 
 /**
   * This function creates a message and header struct and writes both to parent process
+  * combines the header and payload to avoid different payloads from other processes
+  * to be read instead for this header
   * Returns: nothing
 **/
 void write_struct_namecount(int fd, NameCountData *data) {
@@ -82,8 +86,7 @@ void outputPIDs(int fd, char * pid) {
     for(int i = 0; i < nameCount; i++) {
         struct nlist *np = lookup(nameList[i]);
         for(int j = 0; j < np->nCount; j++) {
-            if(strcmp(np->names[j], nameList[i]) == 0)
-            {
+            if(strcmp(np->names[j], nameList[i]) == 0) {
                 NameCountData d = {0};
                 strncpy(d.name, nameList[i], sizeof(d.name) - 1);
                 d.count = np->counts[j];

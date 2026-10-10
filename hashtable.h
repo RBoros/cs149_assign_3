@@ -1,6 +1,6 @@
 /**
  * Description: This implements a hashtable data structure (header-only, so
- *              shell.c and countnames.c compile with no extra source file).
+ * shell.c and countnames.c compile with no extra source file).
  * Author names: Ebsan Iqbal, Raymond Okolo
  * Author emails: ebsan.iqbal@sjsu.edu, raymond.okolo@sjsu.edu
  * Last modified date: 10/6/2026

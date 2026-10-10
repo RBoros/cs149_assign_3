@@ -1,9 +1,10 @@
 /**
- * Description: This program creates multiple simultaneous processes for countnames.c and sums the total
+ * Description: This program creates multiple simultaneous processes for countnames.c and combines
+ * the results to compute a total names count and print to stdout.
  * Author names: Ebsan Iqbal, Raymond Okolo
  * Author emails: ebsan.iqbal@sjsu.edu, raymond.okolo@sjsu.edu
- * Last modified date: 10/5/2026
- * Creation date: 9/20/2026
+ * Last modified date: 10/10/2026
+ * Creation date: 10/5/2026
  **/
 
 #include <stdio.h>
@@ -15,8 +16,10 @@
 
 #define MAX_LINE 1024   // max characters read per prompt line
 #define MAX_TOKENS 64   // max tokens (command + filenames) per line
-#define NAME_LEN 32
+#define NAME_LEN 32     // max length of name
 
+
+//Message payload
 typedef struct {
     char name[NAME_LEN];
     int count;
@@ -27,6 +30,7 @@ typedef enum {
     TYPE_OTHERTYPE // there is a possibility to extend with more types in the future
 } MessageType;
 
+//message header
 typedef struct {
     MessageType type;
     size_t size; // Size of the following payload
@@ -34,6 +38,9 @@ typedef struct {
 
 /**
   * This function reads and processes data from a returned message header and payload
+  * Loops through hmesage header to get all bytes
+  * Loops through message payload to get all bytes
+  * inserts payload in hashtable
   * Returns: nothing
 **/
 void read_from_pipe(int fd) {
@@ -69,7 +76,7 @@ void read_from_pipe(int fd) {
                     ssize_t n = read(fd, q + g, sizeof(d) - g);
 
                     if (n <= 0){
-                        fprintf(stderr, "error: bad namecount\n");
+                        fprintf(stderr, "error: bad namecount payload\n");
                         return;
                     }
                     g += n;
@@ -145,7 +152,7 @@ void printNames(){
 }
 
 int main() {
-    int rEnd[MAX_TOKENS];
+    int rEnd[MAX_TOKENS];   //stores read information from all children processes
     char line[MAX_LINE];
 
     while (1){
@@ -176,7 +183,7 @@ int main() {
         }
 
         if (count == 1) {
-            // no files given: one child reads stdin ("1" tells countnames so)
+            // no files given: one child reads stdin ("1" tells countnames)
             int r = makeChildren(tokens[0], "1");
             if (r >= 0) {
                 rEnd[children++] = r;
@@ -198,7 +205,7 @@ int main() {
 
 
         printNames();
-        clearTable();
+        clearTable();       //clears hashtable for next command
 
         // Parent: reap every child so none are left as zombies, and report
         // whether each exited normally or was killed by a signal.
@@ -210,8 +217,7 @@ int main() {
                         "Child %d terminated normally with exit code: %d\n",
                         pid,
                         WEXITSTATUS(status));
-            }
-            else if (WIFSIGNALED(status)) {
+            } else if (WIFSIGNALED(status)) {
                 fprintf(stderr,
                         "Child %d terminated abnormally with signal number: %d\n",
                         pid,
